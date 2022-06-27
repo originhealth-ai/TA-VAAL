@@ -18,9 +18,10 @@ from models.resnet import vgg11
 from models.query_models import LossNet
 from train_test import train, test
 from load_dataset import load_dataset
+from load_medical_dataset import load_medical_dataset
 from selection_methods import query_samples
 from config import *
-
+from classifier_model.original_model import OriginalClassificationModel
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-l","--lambda_loss",type=float, default=1.2, 
@@ -67,7 +68,10 @@ if __name__ == '__main__':
     for trial in range(TRIALS):
 
         # Load training and testing dataset
-        data_train, data_unlabeled, data_test, adden, NO_CLASSES, no_train = load_dataset(args.dataset)
+        #data_train, data_unlabeled, data_test, adden, NO_CLASSES, no_train = load_dataset(args.dataset)
+        data_train, data_unlabeled, data_test, adden, NO_CLASSES, no_train = load_medical_dataset()
+        #print(f"\n\ndata_train = {data_train}\n\n, data_unlabeled = {data_unlabeled}\n\n, data_test = {data_test}\n\n, adden = {adden}\n\n, NO_CLASSES = {NO_CLASSES}\n\n, no_train = {no_train}\n\n")
+        
         print('The entire datasize is {}'.format(len(data_train)))       
         ADDENDUM = adden
         NUM_TRAIN = no_train
@@ -85,6 +89,7 @@ if __name__ == '__main__':
                                     pin_memory=True, drop_last=True)
         test_loader  = DataLoader(data_test, batch_size=BATCH)
         dataloaders  = {'train': train_loader, 'test': test_loader}
+        #print(f"\n\ntrain_loader = {train_loader}\n\n, test_loader = {test_loader}\n\n")
 
         for cycle in range(CYCLES):
             
@@ -94,15 +99,19 @@ if __name__ == '__main__':
                 subset = unlabeled_set[:SUBSET]
             # Model - create new instance for every cycle so that it resets
             with torch.cuda.device(CUDA_VISIBLE_DEVICES):
-                if args.dataset == "fashionmnist":
-                    resnet18    = resnet.ResNet18fm(num_classes=NO_CLASSES).cuda()
-                else:
-                    #resnet18    = vgg11().cuda() 
-                    resnet18    = resnet.ResNet18(num_classes=NO_CLASSES).cuda()
+                # if args.dataset == "fashionmnist":
+                #     resnet18    = resnet.ResNet18fm(num_classes=NO_CLASSES).cuda()
+                # else:
+                #     #resnet18    = vgg11().cuda() 
+                #     resnet18    = resnet.ResNet18(num_classes=NO_CLASSES).cuda()
+
+                resnet18    = resnet.ResNet18fm(num_classes=NO_CLASSES).cuda() #Editted part of the code
+                #resnext50 = OriginalClassificationModel(backbone = "resnext50", classifiers = {"n_class": NO_CLASSES}).cuda()
+                
                 if method == 'lloss' or 'TA-VAAL':
                     #loss_module = LossNet(feature_sizes=[16,8,4,2], num_channels=[128,128,256,512]).cuda()
+                    #loss_module = LossNet(feature_sizes=[( 56, 72),(28, 36),(14, 18),(7, 9)], num_channels=[256,512,1024,2048]).cuda()
                     loss_module = LossNet().cuda()
-
             models      = {'backbone': resnet18}
             if method =='lloss' or 'TA-VAAL':
                 models = {'backbone': resnet18, 'module': loss_module}
@@ -138,6 +147,7 @@ if __name__ == '__main__':
             # Get the indices of the unlabeled samples to train on next cycle
             arg = query_samples(models, method, data_unlabeled, subset, labeled_set, cycle, args)
 
+            #print(f"\n\nsubset = {subset}, {len(subset)} \n\narg = {arg}, {len(arg)}")
             # Update the labeled dataset and the unlabeled dataset, respectively
             new_list = list(torch.tensor(subset)[arg][:ADDENDUM].numpy())
             # print(len(new_list), min(new_list), max(new_list))

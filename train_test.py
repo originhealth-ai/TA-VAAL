@@ -118,7 +118,7 @@ def train(models, method, criterion, optimizers, schedulers, dataloaders, num_ep
     print('>> Train a Model.')
     best_acc = 0.
     
-    for epoch in range(num_epochs):
+    for epoch in tqdm(range(num_epochs)):
 
         best_loss = torch.tensor([0.5]).cuda()
         loss = train_epoch(models, method, criterion, optimizers, dataloaders, epoch, epoch_loss)

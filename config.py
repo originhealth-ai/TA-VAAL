@@ -11,10 +11,10 @@ ADDENDUM  = 1000 # K
 MARGIN = 1.0 # xi
 WEIGHT = 1.0 # lambda
 
-TRIALS = 5
+TRIALS = 1
 CYCLES = 10
 
-EPOCH = 200
+EPOCH = 2
 EPOCH_GCN = 200
 LR = 1e-1
 LR_GCN = 1e-3

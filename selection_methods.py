@@ -8,7 +8,7 @@ from config import *
 from models.query_models import VAE, Discriminator, GCN
 from data.sampler import SubsetSequentialSampler
 from kcenterGreedy import kCenterGreedy
-
+from tqdm import tqdm
 def BCEAdjLoss(scores, lbl, nlbl, l_adj):
     lnl = torch.log(scores[lbl])
     lnu = torch.log(1 - scores[nlbl])
@@ -47,7 +47,7 @@ def vae_loss(x, recon, mu, logvar, beta):
     return MSE + KLD
 
 def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cycle):
-    
+
     vae = models['vae']
     discriminator = models['discriminator']
     task_model = models['backbone']
@@ -73,10 +73,11 @@ def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cyc
     unlabeled_data = read_data(unlabeled_dataloader)
 
     train_iterations = int( (ADDENDUM*cycle+ SUBSET) * EPOCHV / BATCH )
-
-    for iter_count in range(train_iterations):
-        labeled_imgs, labels = next(labeled_data)
-        unlabeled_imgs = next(unlabeled_data)[0]
+    #train_iterations = 200
+    print(train_iterations)
+    for iter_count in tqdm(range(train_iterations)):
+        labeled_imgs, labels = next(iter(labeled_data))
+        unlabeled_imgs = next(iter(unlabeled_data))[0]
 
         with torch.cuda.device(CUDA_VISIBLE_DEVICES):
             labeled_imgs = labeled_imgs.cuda()
@@ -312,6 +313,8 @@ def query_samples(model, method, data_unlabeled, subset, labeled_set, cycle, arg
 
     if method == 'TA-VAAL':
         # Create unlabeled dataloader for the unlabeled subset
+        # print(subset)
+        # print(labeled_set)
         unlabeled_loader = DataLoader(data_unlabeled, batch_size=BATCH, 
                                     sampler=SubsetSequentialSampler(subset), 
                                     pin_memory=True)
@@ -322,9 +325,9 @@ def query_samples(model, method, data_unlabeled, subset, labeled_set, cycle, arg
             vae = VAE(28,1,3)
             discriminator = Discriminator(28)
         else:
-            vae = VAE()
+            vae = VAE(nc = 1)
             discriminator = Discriminator(32)
-     
+        
         models      = {'backbone': model['backbone'], 'module': model['module'],'vae': vae, 'discriminator': discriminator}
         
         optim_vae = optim.Adam(vae.parameters(), lr=5e-4)
