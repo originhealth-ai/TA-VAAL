@@ -82,10 +82,10 @@ class BaseClassifierDataset(Dataset):
             return image, cls_label, idx
 #%%
 def load_medical_dataset():
-    #size = [224, 288]
-    size= [32, 32]
+    size = [224, 288]
+    #size= [32, 32]
     data_train_json = { "train": {
-        "path": "cp_cyst_classifier_data_train_al.json",
+        "path": "TC_TV_other_classification_train_al.json",
         "transform": {
             "RGBToGrayscale": { "p": 1 },
             "Resize": { "new_size": size, "p": 1 },
@@ -105,7 +105,7 @@ def load_medical_dataset():
     # }
 
     data_test_json = { "test": {
-        "path": "cp_cyst_classifier_data_test_al.json",
+        "path": "TC_TV_other_classification_test_al.json",
         "transform": {
             "RGBToGrayscale": { "p": 1 },
             "Resize": { "new_size": size, "p": 1 },
@@ -152,7 +152,10 @@ def load_medical_dataset():
     #print(train_loader[0])
     it = iter(data_train)
     data = next(it)
-    print(data[0].shape)
+    print(f"Train data shape{data[0].shape}")
+    it = iter(data_test)
+    data = next(it)
+    print(f"Test data shape{data[0].shape}")
     plt.figure()
     plt.imshow(data[0][0,:,:], cmap='gray')
 

@@ -46,7 +46,7 @@ def vae_loss(x, recon, mu, logvar, beta):
     KLD = KLD * beta
     return MSE + KLD
 
-def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cycle):
+def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cycle, run):
 
     vae = models['vae']
     discriminator = models['discriminator']
@@ -124,6 +124,7 @@ def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cyc
             
             optimizers['vae'].zero_grad()
             total_vae_loss.backward()
+            run["vae/loss"].log(total_vae_loss)
             optimizers['vae'].step()
 
             # sample new batch if needed to train the adversarial network
@@ -157,6 +158,7 @@ def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cyc
 
             optimizers['discriminator'].zero_grad()
             dsc_loss.backward()
+            run["discriminator/loss"].log(dsc_loss)
             optimizers['discriminator'].step()
 
             # sample new batch if needed to train the adversarial network
@@ -221,7 +223,7 @@ def get_kcg(models, labeled_data_size, unlabeled_loader):
 
 
 # Select the indices of the unlablled data according to the methods
-def query_samples(model, method, data_unlabeled, subset, labeled_set, cycle, args):
+def query_samples(model, method, data_unlabeled, subset, labeled_set, cycle, args, run):
 
     if method == 'Random':
         arg = np.random.randint(SUBSET, size=SUBSET)
@@ -334,7 +336,7 @@ def query_samples(model, method, data_unlabeled, subset, labeled_set, cycle, arg
         optim_discriminator = optim.Adam(discriminator.parameters(), lr=5e-4)
         optimizers = {'vae': optim_vae, 'discriminator':optim_discriminator}
 
-        train_vaal(models,optimizers, labeled_loader, unlabeled_loader, cycle+1)
+        train_vaal(models,optimizers, labeled_loader, unlabeled_loader, cycle+1, run)
         task_model = models['backbone']
         ranker = models['module']        
         all_preds, all_indices = [], []

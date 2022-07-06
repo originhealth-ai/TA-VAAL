@@ -22,6 +22,7 @@ from load_medical_dataset import load_medical_dataset
 from selection_methods import query_samples
 from config import *
 from classifier_model.original_model import OriginalClassificationModel
+import neptune.new as neptune
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-l","--lambda_loss",type=float, default=1.2, 
@@ -49,6 +50,13 @@ args = parser.parse_args()
 # Main
 if __name__ == '__main__':
 
+    run = neptune.init(
+    project="origin-health/Active-learning",
+    api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiJiOWYxMDQyZS1iY2E4LTQ1NjEtYmI1Yy04N2QzNmFmYWVlYWEifQ==",
+    )  
+
+    run["sys/tags"].add(["Learning loss","resnext101","Proper", "Large dataset"])
+
     method = args.method_type
     methods = ['Random', 'UncertainGCN', 'CoreGCN', 'CoreSet', 'lloss','VAAL','TA-VAAL']
     datasets = ['cifar10','cifar10im', 'cifar100', 'fashionmnist','svhn']
@@ -65,6 +73,16 @@ if __name__ == '__main__':
         CYCLES = 1
     else:
         CYCLES = args.cycles
+
+    params = {
+    "batch_size": BATCH,
+    "addendum": ADDENDUM,
+    "epoch": args.no_of_epochs,
+    "cycles" : CYCLES,
+    "optimizer": "Adam",
+    "method": method
+    }
+    run["parameters"] = params
     for trial in range(TRIALS):
 
         # Load training and testing dataset
@@ -105,16 +123,18 @@ if __name__ == '__main__':
                 #     #resnet18    = vgg11().cuda() 
                 #     resnet18    = resnet.ResNet18(num_classes=NO_CLASSES).cuda()
 
-                resnet18    = resnet.ResNet18fm(num_classes=NO_CLASSES).cuda() #Editted part of the code
-                #resnext50 = OriginalClassificationModel(backbone = "resnext50", classifiers = {"n_class": NO_CLASSES}).cuda()
+                #resnet18    = resnet.ResNet18fm(num_classes=NO_CLASSES).cuda() #Editted part of the code
+                resnext101 = OriginalClassificationModel(backbone = "resnext101", classifiers = {"n_class": NO_CLASSES}).cuda()
                 
                 if method == 'lloss' or 'TA-VAAL':
                     #loss_module = LossNet(feature_sizes=[16,8,4,2], num_channels=[128,128,256,512]).cuda()
-                    #loss_module = LossNet(feature_sizes=[( 56, 72),(28, 36),(14, 18),(7, 9)], num_channels=[256,512,1024,2048]).cuda()
-                    loss_module = LossNet().cuda()
-            models      = {'backbone': resnet18}
+                    #loss_module = LossNet(feature_sizes=[56,28,14,7], num_channels=[256,512,1024,2048]).cuda()
+                    loss_module = LossNet(feature_sizes=[( 56, 72),(28, 36),(14, 18),(7, 9)], num_channels=[256,512,1024,2048]).cuda()
+                    #loss_module = LossNet().cuda()
+
+            models      = {'backbone': resnext101}
             if method =='lloss' or 'TA-VAAL':
-                models = {'backbone': resnet18, 'module': loss_module}
+                models = {'backbone': resnext101, 'module': loss_module}
             torch.backends.cudnn.benchmark = True
             
             # Loss, criterion and scheduler (re)initialization
@@ -133,8 +153,20 @@ if __name__ == '__main__':
                 schedulers = {'backbone': sched_backbone, 'module': sched_module}
             
             # Training and testing
-            train(models, method, criterion, optimizers, schedulers, dataloaders, args.no_of_epochs, EPOCHL)
-            acc = test(models, EPOCH, method, dataloaders, mode='test')
+            train(models, method, criterion, optimizers, schedulers, dataloaders, args.no_of_epochs, EPOCHL, run)
+            acc, f1score, sensitivity, specificity= test(models, EPOCH, method, dataloaders, mode='test')
+            
+            run["test/accuracy"].log(acc)
+            run["test/f1score"].log(f1score)
+            run["test/sensitivity"].log(sensitivity)
+            run["test/specificity"].log(specificity)
+            # run["test/TC_sensitivity"].log(classwise_sensitivity[0])
+            # run["test/TC_specificity"].log(classwise_specificity[0])
+            # run["test/TV_sensitivity"].log(classwise_sensitivity[1])
+            # run["test/TV_specificity"].log(classwise_specificity[1])
+            # run["test/other_sensitivity"].log(classwise_sensitivity[2])
+            # run["test/other_specificity"].log(classwise_specificity[2])
+            print(f"Trial {trial+1}/{TRIALS} || Cycle {cycle+1}/{CYCLES} || Label set size {len(labeled_set)}: Test acc {acc} || Test f1 score {f1score} || Test sensitivity {sensitivity} || Test specificity {specificity}")
             print('Trial {}/{} || Cycle {}/{} || Label set size {}: Test acc {}'.format(trial+1, TRIALS, cycle+1, CYCLES, len(labeled_set), acc))
             np.array([method, trial+1, TRIALS, cycle+1, CYCLES, len(labeled_set), acc]).tofile(results, sep=" ")
             results.write("\n")
@@ -145,7 +177,7 @@ if __name__ == '__main__':
                 print("Finished.")
                 break
             # Get the indices of the unlabeled samples to train on next cycle
-            arg = query_samples(models, method, data_unlabeled, subset, labeled_set, cycle, args)
+            arg = query_samples(models, method, data_unlabeled, subset, labeled_set, cycle, args, run)
 
             #print(f"\n\nsubset = {subset}, {len(subset)} \n\narg = {arg}, {len(arg)}")
             # Update the labeled dataset and the unlabeled dataset, respectively
@@ -159,5 +191,5 @@ if __name__ == '__main__':
             dataloaders['train'] = DataLoader(data_train, batch_size=BATCH, 
                                             sampler=SubsetRandomSampler(labeled_set), 
                                             pin_memory=True)
-
+    run.stop()
     results.close()
