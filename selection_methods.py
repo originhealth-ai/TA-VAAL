@@ -8,7 +8,7 @@ from config import *
 from models.query_models import VAE, Discriminator, GCN
 from data.sampler import SubsetSequentialSampler
 from kcenterGreedy import kCenterGreedy
-
+from tqdm import tqdm
 def BCEAdjLoss(scores, lbl, nlbl, l_adj):
     lnl = torch.log(scores[lbl])
     lnu = torch.log(1 - scores[nlbl])
@@ -46,8 +46,8 @@ def vae_loss(x, recon, mu, logvar, beta):
     KLD = KLD * beta
     return MSE + KLD
 
-def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cycle):
-    
+def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cycle, run):
+
     vae = models['vae']
     discriminator = models['discriminator']
     task_model = models['backbone']
@@ -73,10 +73,11 @@ def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cyc
     unlabeled_data = read_data(unlabeled_dataloader)
 
     train_iterations = int( (ADDENDUM*cycle+ SUBSET) * EPOCHV / BATCH )
-
-    for iter_count in range(train_iterations):
-        labeled_imgs, labels = next(labeled_data)
-        unlabeled_imgs = next(unlabeled_data)[0]
+    #train_iterations = 200
+    print(train_iterations)
+    for iter_count in tqdm(range(train_iterations)):
+        labeled_imgs, labels = next(iter(labeled_data))
+        unlabeled_imgs = next(iter(unlabeled_data))[0]
 
         with torch.cuda.device(CUDA_VISIBLE_DEVICES):
             labeled_imgs = labeled_imgs.cuda()
@@ -123,6 +124,7 @@ def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cyc
             
             optimizers['vae'].zero_grad()
             total_vae_loss.backward()
+            run["vae/loss"].log(total_vae_loss)
             optimizers['vae'].step()
 
             # sample new batch if needed to train the adversarial network
@@ -156,6 +158,7 @@ def train_vaal(models, optimizers, labeled_dataloader, unlabeled_dataloader, cyc
 
             optimizers['discriminator'].zero_grad()
             dsc_loss.backward()
+            run["discriminator/loss"].log(dsc_loss)
             optimizers['discriminator'].step()
 
             # sample new batch if needed to train the adversarial network
@@ -220,7 +223,7 @@ def get_kcg(models, labeled_data_size, unlabeled_loader):
 
 
 # Select the indices of the unlablled data according to the methods
-def query_samples(model, method, data_unlabeled, subset, labeled_set, cycle, args):
+def query_samples(model, method, data_unlabeled, subset, labeled_set, cycle, args, run):
 
     if method == 'Random':
         arg = np.random.randint(SUBSET, size=SUBSET)
@@ -312,6 +315,8 @@ def query_samples(model, method, data_unlabeled, subset, labeled_set, cycle, arg
 
     if method == 'TA-VAAL':
         # Create unlabeled dataloader for the unlabeled subset
+        # print(subset)
+        # print(labeled_set)
         unlabeled_loader = DataLoader(data_unlabeled, batch_size=BATCH, 
                                     sampler=SubsetSequentialSampler(subset), 
                                     pin_memory=True)
@@ -322,16 +327,16 @@ def query_samples(model, method, data_unlabeled, subset, labeled_set, cycle, arg
             vae = VAE(28,1,3)
             discriminator = Discriminator(28)
         else:
-            vae = VAE()
+            vae = VAE(nc = 1)
             discriminator = Discriminator(32)
-     
+        
         models      = {'backbone': model['backbone'], 'module': model['module'],'vae': vae, 'discriminator': discriminator}
         
         optim_vae = optim.Adam(vae.parameters(), lr=5e-4)
         optim_discriminator = optim.Adam(discriminator.parameters(), lr=5e-4)
         optimizers = {'vae': optim_vae, 'discriminator':optim_discriminator}
 
-        train_vaal(models,optimizers, labeled_loader, unlabeled_loader, cycle+1)
+        train_vaal(models,optimizers, labeled_loader, unlabeled_loader, cycle+1, run)
         task_model = models['backbone']
         ranker = models['module']        
         all_preds, all_indices = [], []

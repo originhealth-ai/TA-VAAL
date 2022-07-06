@@ -5,6 +5,7 @@ import numpy as np
 import torchvision.transforms as T
 import models.resnet as resnet
 import torch.nn as nn
+from sklearn.metrics import f1_score, confusion_matrix, classification_report
 ##
 # Loss Prediction Loss
 def LossPredLoss(input, target, margin=1.0, reduction='mean'):
@@ -35,18 +36,43 @@ def test(models, epoch, method, dataloaders, mode='val'):
     
     total = 0
     correct = 0
+    all_preds = []
+    all_labels = []
     with torch.no_grad():
         for (inputs, labels) in dataloaders[mode]:
             with torch.cuda.device(CUDA_VISIBLE_DEVICES):
                 inputs = inputs.cuda()
                 labels = labels.cuda()
-
+            
             scores, _, _ = models['backbone'](inputs)
             _, preds = torch.max(scores.data, 1)
             total += labels.size(0)
             correct += (preds == labels).sum().item()
+            all_preds.append(i.item() for i in preds)
+            all_labels.append(i.item() for i in labels)
+
+        all_preds = [y for x in all_preds for y in x]
+        all_labels = [y for x in all_labels for y in x]
+        #print(all_preds, all_labels)
+        f1score = f1_score(all_labels, all_preds, average='macro')
+        print(classification_report(all_labels, all_preds))
+        clfrep = classification_report(all_labels, all_preds,output_dict = True)
+        spec=clfrep["0"]["recall"]
+        sens=clfrep["1"]["recall"]
+        #tn, fp, fn, tp = confusion_matrix(all_labels, all_preds).ravel()
+        # arr = multilabel_confusion_matrix(labels, preds, labels = ["TC", "TV", "other"])
+        # classwise_sensitivity = {}
+        # classwise_specificity = {}
+        # for i in range(3):
+        #     classwise_sensitivity[i] = arr[i][1][1]/(arr[i][1][1] + arr[i][1][0])
+        #     classwise_specificity[i] = arr[i][0][0]/(arr[i][0][0] + arr[i][0][1])
+        
+        # sensitivity = tp/(tp+fn)
+        # specificity = tn/(tn+fp)
+
+
     
-    return 100 * correct / total
+    return 100 * correct / total, f1score, sens, spec
 
 def test_tsne(models, epoch, method, dataloaders, mode='val'):
     assert mode == 'val' or mode == 'train'
@@ -71,7 +97,7 @@ def test_tsne(models, epoch, method, dataloaders, mode='val'):
     return out_vec,label
 
 iters = 0
-def train_epoch(models, method, criterion, optimizers, dataloaders, epoch, epoch_loss):
+def train_epoch(models, method, criterion, optimizers, dataloaders, epoch, epoch_loss, run):
 
 
     models['backbone'].train()
@@ -109,20 +135,21 @@ def train_epoch(models, method, criterion, optimizers, dataloaders, epoch, epoch
             loss            = m_backbone_loss
 
         loss.backward()
+        run["task-learner/batch/loss"].log(loss)
         optimizers['backbone'].step()
         if method == 'lloss' or 'TA-VAAL':
             optimizers['module'].step()
     return loss
 
-def train(models, method, criterion, optimizers, schedulers, dataloaders, num_epochs, epoch_loss):
+def train(models, method, criterion, optimizers, schedulers, dataloaders, num_epochs, epoch_loss, run):
     print('>> Train a Model.')
     best_acc = 0.
     
-    for epoch in range(num_epochs):
+    for epoch in tqdm(range(num_epochs)):
 
         best_loss = torch.tensor([0.5]).cuda()
-        loss = train_epoch(models, method, criterion, optimizers, dataloaders, epoch, epoch_loss)
-
+        loss = train_epoch(models, method, criterion, optimizers, dataloaders, epoch, epoch_loss, run)
+        run["task-learner/epoch/loss"].log(loss)
         schedulers['backbone'].step()
         if method == 'lloss' or 'TA-VAAL':
             schedulers['module'].step()
